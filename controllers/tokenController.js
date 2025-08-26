@@ -1,4 +1,4 @@
-const User = require("./models/user")
+const User = require("../models/user")
 const asyncHandler = require("../utils/asyncHandler")
 const ResponseHandler = require("../utils/response")
 const jwtManager = require("../utils/jwt")

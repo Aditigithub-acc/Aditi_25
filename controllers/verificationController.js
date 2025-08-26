@@ -1,5 +1,5 @@
-const User = require("./models/user")
-const asyncHandler = require("../utils/asyncHandler")
+const User = require("../models/user.js")
+const asyncHandler = require("../utils/asyncHandler.js")
 const ResponseHandler = require("../utils/response")
 const logger = require("../utils/logger")
 const emailService = require("../services/emailService")

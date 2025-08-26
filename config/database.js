@@ -1,13 +1,20 @@
-const mongoose = require("mongoose")
+const mongoose = require("mongoose");
 
 const connectDB = async () => {
-  try {
-    const conn = await mongoose.connect(process.env.MONGODB_URI)
-    console.log(`MongoDB Connected: ${conn.connection.host}`)
-  } catch (error) {
-    console.error("Database connection failed:", error.message)
-    process.exit(1)
-  }
-}
+  const mongoURI = process.env.MONGODB_URI || "mongodb://localhost:27017/backend";
 
-module.exports = connectDB
+  try {
+    const conn = await mongoose.connect(mongoURI, {
+      useNewUrlParser: true,
+      useUnifiedTopology: true,
+    });
+    console.log(`Database connected successfully!... ${conn.connection.host}`);
+  } catch (error) {
+    console.error("Database connection failed!..", error.message);
+    
+    // Retry after 5 seconds instead of crashing
+    setTimeout(connectDB, 5000);
+  }
+};
+
+module.exports = connectDB;

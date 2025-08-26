@@ -1,6 +1,6 @@
 const express = require("express")
-const { validateVerificationCode } = require("./utils/validators")
-const { verifyEmail, checkVerificationStatus, verifyEmailWithCode } = require("../controllers/verificationController")
+const { validateVerificationCode } = require("../utils/Validators.js")
+const { verifyEmail, checkVerificationStatus, verifyEmailWithCode } = require("../controllers/verificationController.js")
 
 const router = express.Router()
 

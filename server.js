@@ -1,54 +1,58 @@
-const express = require("express")
-const User = require('../models/user')
-const cors = require("cors")
-const helmet = require("helmet")
-const rateLimit = require("express-rate-limit")
-require("dotenv").config()
+const express = require("express");
+require("dotenv").config();
+const cors = require("cors");
+const helmet = require("helmet");
+const rateLimit = require("express-rate-limit");
+const connectDB = require("./config/database.js");
 
-const connectDB = require("./config/database")
+// ✅ Import routes correctly
+const authRoutes = require("./routes/auth.js"); // ensure this exports router directly
+const verificationRoutes = require("./routes/verfication.js"); // ensure this exports router directly
 
-const authRoutes = require("./routes/auth")
-const verificationRoutes = require("./routes/verification")
+const app = express();
 
-const app = express()
+// Middleware
+app.use(cors());
+app.use(helmet());
+app.use(express.json({ limit: "10mb" }));
+app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
-app.use(helmet())
-
-
+// Rate Limiter
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
+  windowMs: 15 * 60 * 1000, // 15 minutes
   max: 100,
   message: "Too many requests from this IP, please try again later.",
-})
-app.use(limiter)
+});
+app.use(limiter);
 
-app.use(express.json({ limit: "10mb" }))
-app.use(express.urlencoded({ extended: true, limit: "10mb" }))
+// Connect Database
+connectDB();
 
-connectDB()
+// Routes
+app.use("/api/auth", authRoutes);
+app.use("/api/verification", verificationRoutes);
 
-app.use("/api/auth", authRoutes)
-app.use("/api/verification", verificationRoutes)
-
+// Health Check
 app.get("/health", (req, res) => {
   res.status(200).json({
     success: true,
     message: "Server is running properly",
     timestamp: new Date().toISOString(),
-  })
-})
+  });
+});
 
+// 404 Handler
 app.use("*", (req, res) => {
   res.status(404).json({
     success: false,
     message: "Route not found",
-  })
-})
+  });
+});
 
-const PORT = process.env.PORT || 5000
+const PORT = process.env.PORT;
 
 app.listen(PORT, () => {
-  console.log(`Server running in ${process.env.NODE_ENV} mode on port ${PORT}`)
-})
+  console.log(`Server running in ${process.env.NODE_ENV} mode on port ${PORT}`);
+});
 
-module.exports = app
+module.exports = app;

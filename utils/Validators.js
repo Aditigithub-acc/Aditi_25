@@ -1,5 +1,6 @@
 const { body, param, validationResult } = require("express-validator")
 
+// Common handler for validation errors
 const handleValidationErrors = (req, res, next) => {
   const errors = validationResult(req)
   if (!errors.isEmpty()) {
@@ -18,6 +19,7 @@ const handleValidationErrors = (req, res, next) => {
   next()
 }
 
+// Registration validation
 const validateRegistration = [
   body("name")
     .trim()
@@ -37,13 +39,19 @@ const validateRegistration = [
     .isLength({ min: 6, max: 128 })
     .withMessage("Password must be between 6 and 128 characters")
     .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/)
-    .withMessage("Password must contain at least one lowercase letter, one uppercase letter, and one number"),
+    .withMessage(
+      "Password must contain at least one lowercase letter, one uppercase letter, and one number"
+    ),
 
   handleValidationErrors,
 ]
 
+// Login validation
 const validateLogin = [
-  body("email").isEmail().withMessage("Please provide a valid email address").normalizeEmail(),
+  body("email")
+    .isEmail()
+    .withMessage("Please provide a valid email address")
+    .normalizeEmail(),
 
   body("password")
     .notEmpty()
@@ -54,6 +62,7 @@ const validateLogin = [
   handleValidationErrors,
 ]
 
+// Verification code validation
 const validateVerificationCode = [
   param("code")
     .isLength({ min: 6, max: 6 })
@@ -64,12 +73,17 @@ const validateVerificationCode = [
   handleValidationErrors,
 ]
 
+// Password reset request validation
 const validatePasswordResetRequest = [
-  body("email").isEmail().withMessage("Please provide a valid email address").normalizeEmail(),
+  body("email")
+    .isEmail()
+    .withMessage("Please provide a valid email address")
+    .normalizeEmail(),
 
   handleValidationErrors,
 ]
 
+// Password reset validation
 const validatePasswordReset = [
   body("token")
     .notEmpty()
@@ -81,23 +95,31 @@ const validatePasswordReset = [
     .isLength({ min: 6, max: 128 })
     .withMessage("Password must be between 6 and 128 characters")
     .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/)
-    .withMessage("Password must contain at least one lowercase letter, one uppercase letter, and one number"),
+    .withMessage(
+      "Password must contain at least one lowercase letter, one uppercase letter, and one number"
+    ),
 
   handleValidationErrors,
 ]
 
+// Password change validation
 const validatePasswordChange = [
-  body("currentPassword").notEmpty().withMessage("Current password is required"),
+  body("currentPassword")
+    .notEmpty()
+    .withMessage("Current password is required"),
 
   body("newPassword")
     .isLength({ min: 6, max: 128 })
     .withMessage("New password must be between 6 and 128 characters")
     .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/)
-    .withMessage("New password must contain at least one lowercase letter, one uppercase letter, and one number"),
+    .withMessage(
+      "New password must contain at least one lowercase letter, one uppercase letter, and one number"
+    ),
 
   handleValidationErrors,
 ]
 
+// Profile image validation
 const validateProfileImage = (req, res, next) => {
   if (!req.file) {
     return res.status(400).json({

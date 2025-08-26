@@ -1,17 +1,9 @@
 const express = require("express")
 const validators = require("../utils/Validators")
 const { upload } = require("../config/cloudinary")
-const User = require('./models/user')
-const {
-  validateRegistration,
-  validateLogin,
-  validateVerificationCode,
-  validateProfileImage,
-  validatePasswordResetRequest,
-  validatePasswordReset,
-  validatePasswordChange,
-} = require("../utils/Validators")
-const { protect } = require("../middleware/auth")
+const User = require('../models/user.js')
+const { validateRegistration, validateLogin, validateVerificationCode, validateProfileImage, validatePasswordResetRequest, validatePasswordReset, validatePasswordChange, } = require("../utils/Validators.js")
+const { protect } = require("../middleware/auth.js")
 
 const { registerUser, resendVerificationEmail, loginUser, logoutUser } = require("../controllers/authController")
 
