@@ -1,217 +1,125 @@
-const User = require("../models/user")
-const asyncHandler = require("../utils/asyncHandler")
-const ResponseHandler = require("../utils/response")
-const jwtManager = require("../utils/jwt")
-const logger = require("../utils/logger")
-const emailService = require("../services/emailService")
+const User = require("../models/user.js");
+const asyncHandler = require("../utils/asyncHandler");
+const ResponseHandler = require("../utils/response");
+const logger = require("../utils/logger");
+const emailService = require("../services/emailService");
+const jwtManager = require("../utils/jwt");
 
+// REGISTER USER
 const registerUser = asyncHandler(async (req, res) => {
-  const { name, email, password } = req.body
+  const { name, email, password } = req.body;
 
-  logger.logAuth("REGISTRATION_ATTEMPT", null, email, req.ip, req.get("User-Agent"))
+  logger.logAuth("REGISTRATION_ATTEMPT", null, email, req.ip, req.get("User-Agent"));
 
-  const existingUser = await User.findOne({ email })
-  if (existingUser) {
-    logger.logAuth("REGISTRATION_FAILED_DUPLICATE", null, email, req.ip, req.get("User-Agent"))
-    return ResponseHandler.conflict(res, "User with this email already exists")
-  }
+  const existingUser = await User.findOne({ email: email.toLowerCase().trim() });
+  if (existingUser) return ResponseHandler.conflict(res, "User with this email already exists");
 
-  let profileImageUrl = null
-  if (req.file) {
-    profileImageUrl = req.file.path
-    logger.info("Profile image uploaded successfully", {
-      email,
-      imageUrl: profileImageUrl,
-      fileSize: req.file.size,
-    })
-  }
+  const profileImageUrl = req.file ? req.file.path : null;
+  const verificationCode = Math.floor(100000 + Math.random() * 900000);
+
+  const user = new User({
+    name: name.trim(),
+    email: email.toLowerCase().trim(),
+    password,
+    profileImage: profileImageUrl,
+    verificationCode,
+    isVerified: false,
+  });
+
+  await user.save();
 
   try {
-    const user = new User({
-      name: name.trim(),
-      email: email.toLowerCase().trim(),
-      password,
-      profileImage: profileImageUrl,
-    })
+    // call via emailService
+    await emailService.sendVerificationEmail(user.email, user.name, verificationCode);
+  } catch (err) {
+    console.error("Verification email error:", err); // log whole error
 
-    const verificationCode = user.generateVerificationCode()
-
-    await user.save()
-
-    logger.logAuth("USER_CREATED", user._id, email, req.ip, req.get("User-Agent"))
-
+    // optional rollback: remove the created user to avoid orphaned records
     try {
-      await emailService.sendVerificationEmail(user.email, user.name, verificationCode)
-      logger.info("Verification email sent successfully", {
-        userId: user._id,
-        email: user.email,
-      })
-    } catch (emailError) {
-      logger.error("Failed to send verification email", {
-        userId: user._id,
-        email: user.email,
-        error: emailError.message,
-      })
+      await User.deleteOne({ _id: user._id });
+      console.log("Rolled back user creation due to email failure");
+    } catch (delErr) {
+      console.error("Failed to rollback user after email error:", delErr);
     }
 
-    const userData = {
+    return ResponseHandler.error(res, "Failed to send verification email. Please try again.");
+  }
+
+  logger.logAuth("REGISTRATION_SUCCESS", user._id, email, req.ip, req.get("User-Agent"));
+
+  return ResponseHandler.created(
+    res,
+    {
       id: user._id,
       name: user.name,
       email: user.email,
       profileImage: user.profileImage,
       isVerified: user.isVerified,
       createdAt: user.createdAt,
-    }
+    },
+    "User registered successfully. Check your email for verification code."
+  );
+});
 
-    logger.logAuth("REGISTRATION_SUCCESS", user._id, email, req.ip, req.get("User-Agent"))
 
-    return ResponseHandler.created(
-      res,
-      userData,
-      "User registered successfully. Please check your email for verification instructions.",
-    )
-  } catch (error) {
-    logger.error("Registration failed", {
-      email,
-      error: error.message,
-      stack: error.stack,
-    })
-
-    if (error.code === 11000) {
-      return ResponseHandler.conflict(res, "User with this email already exists")
-    }
-
-    if (error.name === "ValidationError") {
-      const validationErrors = Object.values(error.errors).map((err) => ({
-        field: err.path,
-        message: err.message,
-      }))
-      return ResponseHandler.validationError(res, validationErrors)
-    }
-
-    return ResponseHandler.error(res, "Registration failed. Please try again.")
-  }
-})
-
+// RESEND VERIFICATION EMAIL
 const resendVerificationEmail = asyncHandler(async (req, res) => {
-  const { email } = req.body
+  const { email } = req.body;
+  if (!email) return ResponseHandler.validationError(res, [{ field: "email", message: "Email is required" }]);
 
-  if (!email) {
-    return ResponseHandler.validationError(res, [{ field: "email", message: "Email is required" }])
-  }
+  const user = await User.findOne({ email: email.toLowerCase().trim() });
+  if (!user) return ResponseHandler.success(res, null, "If the email exists, verification email sent");
 
-  const user = await User.findOne({ email: email.toLowerCase().trim() })
+  if (user.isVerified) return ResponseHandler.error(res, "User already verified", 400);
 
-  if (!user) {
-    return ResponseHandler.success(res, null, "If the email exists, a verification email has been sent.")
-  }
+  const verificationCode = user.generateVerificationCode();
+  await user.save();
+  await emailService.sendVerificationEmail(user.email, user.name, verificationCode);
 
-  if (user.isVerified) {
-    return ResponseHandler.error(res, "User is already verified", 400)
-  }
+  logger.logAuth("VERIFICATION_EMAIL_RESENT", user._id, email, req.ip, req.get("User-Agent"));
 
-  try {
-    const verificationCode = user.generateVerificationCode()
-    await user.save()
+  return ResponseHandler.success(res, null, "Verification email resent successfully");
+});
 
-    await emailService.sendVerificationEmail(user.email, user.name, verificationCode)
-
-    logger.logAuth("VERIFICATION_EMAIL_RESENT", user._id, email, req.ip, req.get("User-Agent"))
-
-    return ResponseHandler.success(res, null, "Verification email sent successfully.")
-  } catch (error) {
-    logger.error("Failed to resend verification email", {
-      userId: user._id,
-      email,
-      error: error.message,
-    })
-
-    return ResponseHandler.error(res, "Failed to send verification email. Please try again.")
-  }
-})
-
+// LOGIN USER
 const loginUser = asyncHandler(async (req, res) => {
-  const { email, password } = req.body
+  const { email, password } = req.body;
 
-  logger.logAuth("LOGIN_ATTEMPT", null, email, req.ip, req.get("User-Agent"))
+  const user = await User.findByEmail(email.toLowerCase().trim());
+  if (!user) return ResponseHandler.unauthorized(res, "Invalid email or password");
+  if (!user.isVerified) return ResponseHandler.forbidden(res, "Please verify email before login");
 
-  const user = await User.findByEmail(email.toLowerCase().trim())
-
-  if (!user) {
-    logger.logAuth("LOGIN_FAILED_USER_NOT_FOUND", null, email, req.ip, req.get("User-Agent"))
-    return ResponseHandler.unauthorized(res, "Invalid email or password")
-  }
-
-  if (user.isLocked) {
-    logger.logAuth("LOGIN_FAILED_ACCOUNT_LOCKED", user._id, email, req.ip, req.get("User-Agent"))
-    return ResponseHandler.error(
-      res,
-      "Account is temporarily locked due to too many failed login attempts. Please try again later.",
-      423,
-    )
-  }
-
-  if (!user.isVerified) {
-    logger.logAuth("LOGIN_FAILED_NOT_VERIFIED", user._id, email, req.ip, req.get("User-Agent"))
-    return ResponseHandler.forbidden(res, "Please verify your email address before logging in")
-  }
-
-  const isPasswordValid = await user.comparePassword(password)
-
+  const isPasswordValid = await user.comparePassword(password);
   if (!isPasswordValid) {
-    logger.logAuth("LOGIN_FAILED_INVALID_PASSWORD", user._id, email, req.ip, req.get("User-Agent"))
-
-    await user.incLoginAttempts()
-
-    return ResponseHandler.unauthorized(res, "Invalid email or password")
+    await user.incLoginAttempts();
+    return ResponseHandler.unauthorized(res, "Invalid email or password");
   }
 
-  try {
-    await user.resetLoginAttempts()
+  await user.resetLoginAttempts();
 
-    const token = jwtManager.generateUserToken(user)
+  const token = jwtManager.generateUserToken(user);
 
-    const userData = {
+  return ResponseHandler.success(res, {
+    user: {
       id: user._id,
       name: user.name,
       email: user.email,
       profileImage: user.profileImage,
       isVerified: user.isVerified,
-      lastLogin: user.lastLogin,
-      createdAt: user.createdAt,
-    }
+    },
+    token,
+    tokenType: "Bearer",
+  }, "Login successful");
+});
 
-    logger.logAuth("LOGIN_SUCCESS", user._id, email, req.ip, req.get("User-Agent"))
-
-    return ResponseHandler.success(
-      res,
-      {
-        user: userData,
-        token,
-        tokenType: "Bearer",
-      },
-      "Login successful",
-    )
-  } catch (error) {
-    logger.error("Login process failed", {
-      userId: user._id,
-      email,
-      error: error.message,
-    })
-
-    return ResponseHandler.error(res, "Login failed. Please try again.")
-  }
-})
-
+// LOGOUT USER
 const logoutUser = asyncHandler(async (req, res) => {
-  logger.logAuth("LOGOUT", req.user._id, req.user.email, req.ip, req.get("User-Agent"))
-
-  return ResponseHandler.success(res, null, "Logged out successfully")
-})
+  return ResponseHandler.success(res, null, "Logged out successfully");
+});
 
 module.exports = {
   registerUser,
   resendVerificationEmail,
   loginUser,
   logoutUser,
-}
+};

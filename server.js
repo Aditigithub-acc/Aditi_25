@@ -5,9 +5,9 @@ const helmet = require("helmet");
 const rateLimit = require("express-rate-limit");
 const connectDB = require("./config/database.js");
 
-// ✅ Import routes correctly
-const authRoutes = require("./routes/auth.js"); // ensure this exports router directly
-const verificationRoutes = require("./routes/verfication.js"); // ensure this exports router directly
+// Routes
+const authRoutes = require("./routes/auth.js");
+const verificationRoutes = require("./routes/verfication.js");
 
 const app = express();
 
@@ -19,7 +19,7 @@ app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
 // Rate Limiter
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
+  windowMs: 15 * 60 * 1000,
   max: 100,
   message: "Too many requests from this IP, please try again later.",
 });
@@ -49,8 +49,7 @@ app.use("*", (req, res) => {
   });
 });
 
-const PORT = process.env.PORT;
-
+const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`Server running in ${process.env.NODE_ENV} mode on port ${PORT}`);
 });

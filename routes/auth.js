@@ -1,33 +1,89 @@
-const express = require("express")
-const validators = require("../utils/Validators")
-const { upload } = require("../config/cloudinary")
-const User = require('../models/user.js')
-const { validateRegistration, validateLogin, validateVerificationCode, validateProfileImage, validatePasswordResetRequest, validatePasswordReset, validatePasswordChange, } = require("../utils/Validators.js")
-const { protect } = require("../middleware/auth.js")
+const express = require("express");
+const { upload } = require("../config/cloudinary");
+const { protect } = require("../middleware/auth");
+const { validateRegistration, validateLogin, validateVerificationCode, validateProfileImage,
+     validatePasswordResetRequest, validatePasswordReset, validatePasswordChange, } = require("../utils/Validators");
 
-const { registerUser, resendVerificationEmail, loginUser, logoutUser } = require("../controllers/authController")
+const { registerUser, resendVerificationEmail, loginUser, logoutUser, } = require("../controllers/authController");
 
-const { getUserProfile, updateUserProfile } = require("../controllers/profileController")
+const { getUserProfile, updateUserProfile } = require("../controllers/profileController");
+const { forgotPassword, resetPassword, changePassword } = require("../controllers/passwordController");
+const { refreshToken } = require("../controllers/tokenController");
+const { verifyEmail } = require("../controllers/verificationController");
 
-const { forgotPassword, resetPassword, changePassword } = require("../controllers/passwordController")
+const router = express.Router();
 
-const { refreshToken } = require("../controllers/tokenController")
+// ----------------- AUTH ROUTES -----------------
 
-const { verifyEmail } = require("../controllers/verificationController")
+// Register with profile image
+router.post(
+  "/register",
+  (req, res, next) => {
+    const uploadSingle = upload.single("profileImage"); // must match frontend key
+    uploadSingle(req, res, function (err) {
+      if (err) {
+        console.error("File upload error:", err);
+        return res.status(400).json({
+          success: false,
+          message: "File upload failed",
+          error: err.message,
+        });
+      }
+      next();
+    });
+  },
+  validateRegistration,
+  registerUser
+);
 
-const router = express.Router()
+// Resend verification email
+router.post("/resend-verification", resendVerificationEmail);
 
-router.post("/register", upload.single("profileImage"), validateRegistration, registerUser)
-router.post("/resend-verification", resendVerificationEmail)
-router.get("/verify/:code", validateVerificationCode, verifyEmail)
-router.post("/login", validateLogin, loginUser)
-router.post("/forgot-password", validatePasswordResetRequest, forgotPassword)
-router.post("/reset-password", validatePasswordReset, resetPassword)
-router.post("/refresh-token", refreshToken)
-router.post("/logout", protect, logoutUser)
+// Verify email via code
+router.get("/verify/:code", validateVerificationCode, verifyEmail);
 
-router.get("/profile", protect, getUserProfile)
-router.put("/profile", protect, upload.single("profileImage"), updateUserProfile)
-router.put("/change-password", protect, validatePasswordChange, changePassword)
+// Login
+router.post("/login", validateLogin, loginUser);
 
-module.exports = router
+// Forgot password
+router.post("/forgot-password", validatePasswordResetRequest, forgotPassword);
+
+// Reset password
+router.post("/reset-password", validatePasswordReset, resetPassword);
+
+// Change password (authenticated)
+router.put("/change-password", protect, validatePasswordChange, changePassword);
+
+// Refresh token
+router.post("/refresh-token", refreshToken);
+
+// Logout (authenticated)
+router.post("/logout", protect, logoutUser);
+
+// ----------------- PROFILE ROUTES -----------------
+
+// Get user profile (authenticated)
+router.get("/profile", protect, getUserProfile);
+
+// Update profile (authenticated + optional image)
+router.put(
+  "/profile",
+  protect,
+  (req, res, next) => {
+    const uploadSingle = upload.single("profileImage");
+    uploadSingle(req, res, function (err) {
+      if (err) {
+        console.error("File upload error:", err);
+        return res.status(400).json({
+          success: false,
+          message: "File upload failed",
+          error: err.message,
+        });
+      }
+      next();
+    });
+  },
+  updateUserProfile
+);
+
+module.exports = router;

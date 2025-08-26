@@ -1,172 +1,57 @@
-const User = require("../models/user.js")
-const asyncHandler = require("../utils/asyncHandler.js")
-const ResponseHandler = require("../utils/response")
-const logger = require("../utils/logger")
-const emailService = require("../services/emailService")
+// controllers/verificationController.js
+const User = require("../models/user");
+const asyncHandler = require("../utils/asyncHandler");
+const ResponseHandler = require("../utils/response");
+const logger = require("../utils/logger");
+const emailService = require("../services/emailService");
 
+// GET /verify/:code
 const verifyEmail = asyncHandler(async (req, res) => {
-  const { code } = req.params
+  const { code } = req.params;
+  const user = await User.findOne({ verificationCode: code, verificationCodeExpires: { $gt: Date.now() } });
+  if (!user) return ResponseHandler.error(res, "Invalid or expired verification code", 400);
+  if (user.isVerified) return ResponseHandler.success(res, null, "Email is already verified");
 
-  logger.logAuth("EMAIL_VERIFICATION_ATTEMPT", null, null, req.ip, req.get("User-Agent"))
+  await user.verifyAccount();
 
-  try {
-    const user = await User.findOne({
-      verificationCode: code,
-      verificationCodeExpires: { $gt: Date.now() },
-    })
+  try { await emailService.sendWelcomeEmail(user.email, user.name); } catch (err) { console.error(err); }
 
-    if (!user) {
-      logger.logAuth("EMAIL_VERIFICATION_FAILED_INVALID_CODE", null, null, req.ip, req.get("User-Agent"))
-      return ResponseHandler.error(res, "Invalid or expired verification code", 400)
-    }
+  return ResponseHandler.success(res, { id: user._id, name: user.name, email: user.email, profileImage: user.profileImage, isVerified: true }, "Email verified successfully");
+});
 
-    if (user.isVerified) {
-      logger.logAuth("EMAIL_VERIFICATION_ALREADY_VERIFIED", user._id, user.email, req.ip, req.get("User-Agent"))
-      return ResponseHandler.success(res, null, "Email is already verified")
-    }
-
-    await user.verifyAccount()
-
-    logger.logAuth("EMAIL_VERIFICATION_SUCCESS", user._id, user.email, req.ip, req.get("User-Agent"))
-
-    try {
-      await emailService.sendWelcomeEmail(user.email, user.name)
-      logger.info("Welcome email sent after verification", {
-        userId: user._id,
-        email: user.email,
-      })
-    } catch (emailError) {
-      logger.error("Failed to send welcome email after verification", {
-        userId: user._id,
-        email: user.email,
-        error: emailError.message,
-      })
-    }
-
-    
-    const userData = {
-      id: user._id,
-      name: user.name,
-      email: user.email,
-      profileImage: user.profileImage,
-      isVerified: user.isVerified,
-      verifiedAt: new Date().toISOString(),
-    }
-
-    return ResponseHandler.success(res, userData, "Email verified successfully! Your account is now active.")
-  } catch (error) {
-    logger.error("Email verification process failed", {
-      verificationCode: code,
-      error: error.message,
-      stack: error.stack,
-    })
-
-    return ResponseHandler.error(res, "Email verification failed. Please try again.")
-  }
-})
-
-
-const checkVerificationStatus = asyncHandler(async (req, res) => {
-  const { email } = req.params
-
-  if (!email) {
-    return ResponseHandler.validationError(res, [{ field: "email", message: "Email is required" }])
-  }
-
-  try {
-    const user = await User.findOne({ email: email.toLowerCase().trim() })
-
-    if (!user) {
-      
-      return ResponseHandler.notFound(res, "User not found")
-    }
-
-    const verificationStatus = {
-      email: user.email,
-      isVerified: user.isVerified,
-      hasVerificationCode: !!user.verificationCode,
-      verificationCodeExpired: user.verificationCodeExpires ? user.verificationCodeExpires < Date.now() : true,
-    }
-
-    return ResponseHandler.success(res, verificationStatus, "Verification status retrieved")
-  } catch (error) {
-    logger.error("Failed to check verification status", {
-      email,
-      error: error.message,
-    })
-
-    return ResponseHandler.error(res, "Failed to check verification status")
-  }
-})
-
-
+// POST /verify-code
 const verifyEmailWithCode = asyncHandler(async (req, res) => {
-  const { email, code } = req.body
+  const { email, code } = req.body;
+  if (!email || !code) return ResponseHandler.validationError(res, [
+    { field: "email", message: "Email required" },
+    { field: "code", message: "Code required" },
+  ]);
 
-  if (!email || !code) {
-    return ResponseHandler.validationError(res, [
-      { field: "email", message: "Email is required" },
-      { field: "code", message: "Verification code is required" },
-    ])
-  }
+  const user = await User.findOne({ email: email.toLowerCase().trim(), verificationCode: code, verificationCodeExpires: { $gt: Date.now() } });
+  if (!user) return ResponseHandler.error(res, "Invalid email or verification code", 400);
+  if (user.isVerified) return ResponseHandler.success(res, null, "Email is already verified");
 
-  logger.logAuth("EMAIL_VERIFICATION_WITH_CODE_ATTEMPT", null, email, req.ip, req.get("User-Agent"))
-
+  await user.verifyAccount();
   try {
-    
-    const user = await User.findOne({
-      email: email.toLowerCase().trim(),
-      verificationCode: code,
-      verificationCodeExpires: { $gt: Date.now() },
-    })
+    const result = await emailService.sendWelcomeEmail(user.email, user.name);
+    console.log(result.success ? `Welcome email sent to ${user.email}` : `Email error: ${result.error}`);
+  } catch (err) { console.error(err); }
 
-    if (!user) {
-      logger.logAuth("EMAIL_VERIFICATION_WITH_CODE_FAILED", null, email, req.ip, req.get("User-Agent"))
-      return ResponseHandler.error(res, "Invalid email or verification code", 400)
-    }
+  return ResponseHandler.success(res, { id: user._id, name: user.name, email: user.email, profileImage: user.profileImage, isVerified: true }, "Email verified successfully! Welcome email sent.");
+});
 
-    
-    if (user.isVerified) {
-      logger.logAuth("EMAIL_VERIFICATION_WITH_CODE_ALREADY_VERIFIED", user._id, email, req.ip, req.get("User-Agent"))
-      return ResponseHandler.success(res, null, "Email is already verified")
-    }
+// GET /status/:email
+const checkVerificationStatus = asyncHandler(async (req, res) => {
+  const { email } = req.params;
+  const user = await User.findOne({ email: email.toLowerCase().trim() });
+  if (!user) return ResponseHandler.notFound(res, "User not found");
 
-    await user.verifyAccount()
+  return ResponseHandler.success(res, {
+    email: user.email,
+    isVerified: user.isVerified,
+    hasVerificationCode: !!user.verificationCode,
+    verificationCodeExpired: user.verificationCodeExpires ? user.verificationCodeExpires < Date.now() : true,
+  }, "Verification status retrieved");
+});
 
-    logger.logAuth("EMAIL_VERIFICATION_WITH_CODE_SUCCESS", user._id, email, req.ip, req.get("User-Agent"))
-
-    try {
-      await emailService.sendWelcomeEmail(user.email, user.name)
-    } catch (emailError) {
-      logger.error("Failed to send welcome email", {
-        userId: user._id,
-        email: user.email,
-        error: emailError.message,
-      })
-    }
-
-    const userData = {
-      id: user._id,
-      name: user.name,
-      email: user.email,
-      profileImage: user.profileImage,
-      isVerified: user.isVerified,
-      verifiedAt: new Date().toISOString(),
-    }
-
-    return ResponseHandler.success(res, userData, "Email verified successfully! Your account is now active.")
-  } catch (error) {
-    logger.error("Email verification with code failed", {
-      email,
-      error: error.message,
-    })
-
-    return ResponseHandler.error(res, "Email verification failed. Please try again.")
-  }
-})
-
-module.exports = {
-  verifyEmail,
-  checkVerificationStatus,
-  verifyEmailWithCode,
-}
+module.exports = { verifyEmail, verifyEmailWithCode, checkVerificationStatus };
